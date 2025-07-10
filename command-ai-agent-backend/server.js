@@ -127,7 +127,7 @@ app.post('/webhook', (req, res) => {
         if (!subject || subject.trim() === '') {
             subject = `Meeting with ${personName}`;
         }
-        
+
         //google calendar api call
         try {
             const calendar = await getAuthenticatedCalendarClient()
@@ -167,36 +167,30 @@ app.post('/webhook', (req, res) => {
 
 
             const eventLink = response.data.htmlLink;
-            agent.add(`Okay, I've booked your appointment for ${date} at ${time}.`);
-            if (subject) agent.add(`The topic is "${subject}".`);
-            if (personName) agent.add(`You're meeting with ${personName}.`);
-            agent.add(`You can view it here: ${eventLink}`);
+            //removed additional agent.add to avoid errors
+            let successMessage = `Okay, I've booked your appointment for ${date} at ${time}.`;
+            successMessage += ` The topic is "${subject}".`;
+            if (personName !== 'someone') {
+                successMessage += ` You're meeting with ${personName}.`;
+            }
+            successMessage += ` You can view it here: ${eventLink}`;
+            agent.add(successMessage); // Add the single consolidated message
+
             console.log('Google Calendar event created:', eventLink);
+            console.log('book.appointment intent handler finished.');
+
 
         } catch (error) {
             console.error('Error booking appointment with Google Calendar:', error.message);
+            let errorMessage = "I encountered an error while trying to book your appointment. Please try again later.";
+
             if (error.message.includes('User not authenticated')) {
-                agent.add("It looks like your Google Calendar isn't linked yet. Please visit this link to authorize me: `http://localhost:5000/auth/google` (replace 5000 with your actual port if different).");
+                errorMessage = "It looks like your Google Calendar isn't linked yet. Please visit this link to authorize me: `http://localhost:5000/auth/google` (replace 5000 with your actual port if different).";
             } else if (error.code === 401 || error.code === 403) {
-                agent.add("I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: `http://localhost:5000/auth/google` (replace 5000 with your actual port if different).");
-            } else {
-                agent.add("I encountered an error while trying to book your appointment. Please try again later.");
+                 errorMessage = "I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: `http://localhost:5000/auth/google` (replace 5000 with your actual port if different).";
             }
+            agent.add(errorMessage); //removed additional agent.add to avoid errors
         }
-
-        // let responseText = `Okay, I received your request to book an appointment.`;
-        // if (subject) {
-        //     responseText += ` The topic is "${subject}".`;
-        // } else {
-        //     responseText += ` (No specific topic provided.)`;
-        // }
-        // responseText += ` It's for ${date} at ${time}. You want to meet with ${personName}.`;
-        // responseText += ` I'll process this in the next step!`;
-
-        // Add the combined response text to the agent
-        // agent.add(responseText);
-
-        // console.log('book.appointment intent handler finished.');
     }
 
     // Map Dialogflow Intents to JavaScript Functions 
@@ -208,7 +202,6 @@ app.post('/webhook', (req, res) => {
     //handling request using intent map
     agent.handleRequest(intentMap);
 });
-
 
 //to start the server
 const PORT = process.env.PORT || 5000;
