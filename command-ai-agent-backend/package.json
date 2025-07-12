@@ -11,7 +11,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@google-cloud/dialogflow": "^7.1.0",
+    "@google-cloud/dialogflow": "^7.2.0",
+    "cors": "^2.8.5",
     "dialogflow-fulfillment": "^0.5.0",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",

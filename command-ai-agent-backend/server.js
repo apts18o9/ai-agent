@@ -2,16 +2,24 @@
 const express = require('express');
 const { WebhookClient } = require('dialogflow-fulfillment');
 const { google } = require('googleapis')
+const dialogflow = require('@google-cloud/dialogflow')
+const cors = require('cors');
 require('dotenv').config(); // Loads environment variables from .env file
 
 const app = express();
 app.use(express.json());
+
+app.use(cors({
+    origin: 'http://localhost:5173'
+}))
 
 //GOOGLE oauth setup
 //getting the credentials from env
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI
+const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID;
+const DIALOGFLOW_AGENT_ID = process.env.DIALOGFLOW_AGENT_ID;
 
 
 //configure oauth client
@@ -25,6 +33,13 @@ const oauth2Client = new google.auth.OAuth2(
 const SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 let userTokens = null; //storing access and refresh tokens for current user
+
+//this client use to send text to dialogflow detectInent API received from frontend
+const sessionClient = new dialogflow.SessionsClient();
+
+const SESSION_ID = 'my-unique-frontend-chat-session';
+const sessionPath = sessionClient.projectAgentSessionPath(PROJECT_ID, SESSION_ID);
+
 
 //route to start the google auth flow
 app.get('/auth/google', (req, res) => {
@@ -79,6 +94,51 @@ async function getAuthenticatedCalendarClient() {
     return google.calendar({ version: 'v3', auth: oauth2Client })
 }
 
+
+//creating new endpoint for the client side chat(frontend)
+app.get('/chat', async (req,res) => {
+    const userMessage = req.body.message;
+    if(!userMessage){
+        return res.status(400).json({reply: 'No message provided.'});
+    }
+
+
+    try {
+        const request = {
+            session: sessionPath,
+            queryInput: {
+                text: {
+                    text: userMessage,
+                    languageCode: 'en-us',
+                }
+            }
+        };
+
+        //sending user's msg to dialogflow detection api
+        const response = await sessionClient.detectIntent(request);
+        const result = response[0].queryResult;
+
+        let fulfillmentText = result.fulfillmentText;
+
+        console.log(`Frontend Chat - User: "${userMessage}"`);
+        console.log(`Dialogflow Detected Intent: "${result.intent ? result.intent.intent.displayName : 'None'}"`); // Corrected intent display name access
+        console.log(`Dialogflow Fulfillment Text: "${fulfillmentText}"`);
+
+
+        if(fulfillmentText.includes('It looks like your Google Calendar is not linked yet')){
+            return res.json({reply: fulfillmentText, needsAuth: true}) //show the link display if needed
+        }
+
+        res.json({reply: fulfillmentText});
+        
+    } catch (error) {
+        console.error('Error in chat endpoint', error.message);
+        res.status(500).json({reply: 'An error occured while processing your message'});
+        
+    }
+})
+
+
 // app.get('/', (req, res) => {
 //     res.status(200).send("AI Assistant backend is running");
 // });
@@ -106,6 +166,7 @@ app.post('/webhook', (req, res) => {
         const dateTimeParam = agent.parameters['date-time'];
         const personParam = agent.parameters.person;
         const subject = agent.parameters.subject;
+
         const eventDateTimeISO = dateTimeParam && dateTimeParam.date_time ? dateTimeParam.date_time : null;
         //extract date, time, and person name
         const date = eventDateTimeISO ? eventDateTimeISO.split('T')[0] : 'N/A';
@@ -135,7 +196,7 @@ app.post('/webhook', (req, res) => {
             const tempStartDate = new Date(eventDateTimeISO)
             const eventEndTime = new Date(tempStartDate.getTime() + 60 + 60 * 1000) // 1hour default
 
-            const timeZone = agent.parameters.timeZone || 'Asia/Kolkata'
+            const timeZone = agent.parameters.timeZone || 'Asia/Colombo'
 
             const event = {
                 summary: subject,
@@ -160,13 +221,13 @@ app.post('/webhook', (req, res) => {
                 },
             };
 
-            const response = await calendar.events.insert({ //main api call to create an event
+            const response = await calendar.events.insert({ //main api call to create an event in calendar
                 calendarId: 'primary',
                 resource: event,
             });
 
 
-            const eventLink = response.data.htmlLink;
+            const eventLink = response.data.htmlLink; //main api to create an event in calendar
             //removed additional agent.add to avoid errors
             let successMessage = `Okay, I've booked your appointment for ${date} at ${time}.`;
             successMessage += ` The topic is "${subject}".`;
@@ -209,5 +270,6 @@ app.listen(PORT, () => {
     console.log(`AI assistant backend is running on PORT: ${PORT}`);
     console.log(`Webhook URL for Dialogflow: http://localhost:${PORT}/webhook`);
     console.log(`Google OAuth URL: http://localhost:${PORT}/auth/google`);
-
+    console.log(`Frontend Chat Endpoint: http://localhost:${PORT}/chat`);
+    
 });
