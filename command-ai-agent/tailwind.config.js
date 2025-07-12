@@ -1,8 +1,7 @@
-
-export default {
+module.exports = {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}", // This line is important for React components
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {},

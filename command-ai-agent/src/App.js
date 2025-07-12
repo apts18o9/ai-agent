@@ -15,7 +15,7 @@ function App() {
   //backend port 
   const BACKEND_BASE_URL = 'http://localhost:5000';
   //webhook url(ngrok)
-  const WEBHOOK_URL = '';
+  const WEBHOOK_URL = 'https://1d2af75344f5.ngrok-free.app/chat';
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({behavior: 'smooth'});
@@ -147,7 +147,7 @@ function App() {
             placeholder="Type your message..."
             value={input}
             onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
+            onKeyUp={handleKeyPress}
           />
           <button
             className="ml-3 px-5 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-all duration-200 transform hover:scale-105"
@@ -158,6 +158,7 @@ function App() {
         </div>
       </div>
     </div>
+    // <h1 className='text-red-400'>jeow</h1>
   );
 }
 

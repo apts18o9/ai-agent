@@ -3,6 +3,7 @@ import './index.css';
 
 // Main App component for the chatbot UI
 function App() {
+
   // State to store the chat messages
   const [messages, setMessages] = useState([]);
   // State to store the current message being typed by the user
@@ -11,39 +12,83 @@ function App() {
   // Ref for the messages container to enable auto-scrolling
   const messagesEndRef = useRef(null);
 
-  // Scroll to the bottom of the messages whenever messages state changes
+  //backend port 
+  const BACKEND_BASE_URL = 'http://localhost:5000';
+  //webhook url(ngrok)
+  const WEBHOOK_URL = 'https://fee4ab5df887.ngrok-free.app/chat';
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages])
 
-  // Function to handle sending a message
-  const handleSendMessage = () => {
+  //fun to handle send message
+  const handleSendMessage = async () => {
     if (input.trim()) {
-      // Add user's message to the chat
-      setMessages((prevMessages) => [...prevMessages, { text: input, sender: 'user' }]);
-      setInput(''); // Clear the input field
+      const userMessage = input.trim();
 
-      // TODO: In the next phase, this is where you'll call your Node.js backend
-      // For now, let's simulate a bot response after a short delay
-      setTimeout(() => {
-        setMessages((prevMessages) => [...prevMessages, { text: "Hello! I'm your Calendar AI Assistant. How can I help you today?", sender: 'bot' }]);
-      }, 1000);
-    }
-  };
+      //adding user's message to chat 
+      setMessages((prevMessages) => [...prevMessages, { text: userMessage, sender: 'user' }]);
+      setInput('') //clear the input
 
-  // Function to handle input change
+      try {
+        //sending user's input to dialog flow via backend
+        const response = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: userMessage })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const botReply = data.reply || "I couldn't get a response from assistant.";
+        setMessages((prevMessages) => [...prevMessages, { text: botReply, sender: 'bot' }]);
+
+        //checking if bot reply contains a oauth link
+        if (botReply.includes('Please visit this link to authorize me:')) {
+          const authLink = `${BACKEND_BASE_URL}/auth/google`;
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              text: (
+                <>
+                  It looks your Google Calendar isn't linked yet, Please {' '}
+                  <a href={authLink} target='_blank' rel="noopener noreferrer" className="text-blue-500 underline">
+                    Click here to authorize me.
+
+                  </a>
+                </>
+              ),
+              sender: 'bot',
+            },
+          ])
+        }
+
+
+      } catch (error) {
+        console.error('Error sending message to backend', error);
+        setMessages((prevMessages) => [...prevMessages, { text: 'Something went wrong', sender: 'bot' }]);
+      }
+    };
+  }
+  //input change function
   const handleInputChange = (e) => {
     setInput(e.target.value);
-  };
+  }
 
-  // Function to handle key presses (e.g., Enter to send)
+  //enter to send
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
       handleSendMessage();
     }
-  };
 
+  }
   return (
+    // <h1 className='text-red-400'>gee</h1>
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-200 flex items-center justify-center p-4 font-sans">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[80vh] overflow-hidden">
         {/* Chat Header */}
@@ -76,16 +121,14 @@ function App() {
           {messages.map((message, index) => (
             <div
               key={index}
-              className={`flex ${
-                message.sender === 'user' ? 'justify-end' : 'justify-start'
-              }`}
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'
+                }`}
             >
               <div
-                className={`max-w-[70%] p-3 rounded-lg shadow-sm ${
-                  message.sender === 'user'
+                className={`max-w-[70%] p-3 rounded-lg shadow-sm ${message.sender === 'user'
                     ? 'bg-blue-500 text-white rounded-br-none'
                     : 'bg-gray-200 text-gray-800 rounded-bl-none'
-                }`}
+                  }`}
               >
                 {message.text}
               </div>
@@ -103,7 +146,7 @@ function App() {
             placeholder="Type your message..."
             value={input}
             onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
+            onKeyUp={handleKeyPress}
           />
           <button
             className="ml-3 px-5 py-3 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-all duration-200 transform hover:scale-105"
