@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+
+command-ai-agent-backend/agent-ai-creds.json
+command-ai-agent-backend/client-secret-entry.json
