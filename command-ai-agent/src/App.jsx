@@ -88,13 +88,13 @@ function App() {
 
   }
   return (
-    // <h1 className='text-red-400'>gee</h1>
+   
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-200 flex items-center justify-center p-4 font-sans">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[80vh] overflow-hidden">
         {/* Chat Header */}
         <div className="bg-blue-600 text-white p-4 rounded-t-xl shadow-md flex items-center justify-between">
           <h1 className="text-xl font-semibold">Calendar AI Assistant</h1>
-          {/* Optional: Add an icon or status indicator here */}
+
           <svg
             xmlns="http://www.w3.org/2000/svg"
             className="h-6 w-6 text-blue-200"
@@ -111,7 +111,7 @@ function App() {
           </svg>
         </div>
 
-        {/* Message Display Area */}
+ 
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
           {messages.length === 0 && (
             <div className="text-center text-gray-500 mt-10">
@@ -134,11 +134,11 @@ function App() {
               </div>
             </div>
           ))}
-          {/* Ref for scrolling to the bottom */}
+ 
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Message Input and Send Button */}
+
         <div className="p-4 bg-gray-100 border-t border-gray-200 flex items-center rounded-b-xl">
           <input
             type="text"
