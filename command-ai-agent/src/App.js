@@ -89,11 +89,12 @@ function App() {
   }
 
   return (
+    
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-200 flex items-center justify-center p-4 font-sans">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[80vh] overflow-hidden">
-      
         <div className="bg-blue-600 text-white p-4 rounded-t-xl shadow-md flex items-center justify-between">
           <h1 className="text-xl font-semibold">Calendar AI Assistant</h1>
+        
           <svg
             xmlns="http://www.w3.org/2000/svg"
             className="h-6 w-6 text-blue-200"
