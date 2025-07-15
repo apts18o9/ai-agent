@@ -35,6 +35,5 @@ coverage/
 *.log
 
 
-agent-ai-creds.json
-client-secret-entry.json
-client_secret_735253341985-top8ruat3ae28dgj2jdvktp634maddd6.apps.googleusercontent.com.json
+command-ai-agent-backend/agent-ai-creds.json
+command-ai-agent-backend/client-secret-entry.json
