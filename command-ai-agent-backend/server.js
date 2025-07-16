@@ -113,6 +113,7 @@ app.get('/oauth2callback', async (req, res) => {
 
 //function to get user to google calendar
 async function getAuthenticatedCalendarClient() {
+    //retrieving tokens from firestore for session id;
     const docRef = db.collection('userTokens').doc(FRONTEND_SESSION_ID);
     const doc = await docRef.get();
 
@@ -120,9 +121,9 @@ async function getAuthenticatedCalendarClient() {
         throw new Error('User not authenticated. No tokens found for this session.');
     }
 
-    let tokens = doc.data();
+    let tokens = doc.data(); //get stored tokens
 
-    oauth2Client.setCredentials(tokens);
+    oauth2Client.setCredentials(tokens); //set credentials to oauth client
     
     //if token is expired, use refresh token to get a new
     if (oauth2Client.isTokenExpiring()) {
