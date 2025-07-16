@@ -3,13 +3,13 @@ import './index.css';
 
 function Navbar() {
   return (
-    <nav className="w-full bg-white shadow-md p-4 flex items-center justify-between fixed top-0 left-0 z-10">
-      <div className="text-xl font-semibold text-blue-600">Event Ease</div>
-      <div className="space-x-4">
-        <a href="/" className="text-gray-700 hover:text-blue-500 font-medium">Login</a>
-        <a href="" rel="noreferrer" className="text-gray-700 hover:text-blue-500 font-medium">Signup</a>
+    <div className="fixed top-0 left-1/2 transform -translate-x-1/2 z-10 p-4  rounded-b-xl ">
+      <div className="space-x-6 flex items-center">
+        <a href="/" className="text-gray-700 hover:text-blue-600 font-medium transition">Login</a>
+        <a href="#" className="text-gray-700">Signup</a>
       </div>
-    </nav>
+    </div>
+
   );
 }
 
@@ -18,6 +18,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [showChatbot, setShowChatbot] = useState(false);
+
   const messagesEndRef = useRef(null);
 
   const BACKEND_BASE_URL = 'http://localhost:5000';
@@ -36,6 +37,7 @@ function App() {
       setInput('');
 
       try {
+        //send user's msg to backend /chat endpoint
         const response = await fetch(WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -48,6 +50,7 @@ function App() {
         const botReply = data.reply || "I couldn't get a response from assistant.";
         setMessages((prevMessages) => [...prevMessages, { text: botReply, sender: 'bot' }]);
 
+        //checking if oauth is done or not based on bot reply
         if (botReply.includes('Please visit this link to authorize me:')) {
           const authLink = `${BACKEND_BASE_URL}/auth/google`;
           setMessages((prevMessages) => [
@@ -103,7 +106,7 @@ function App() {
         {/* Chatbot UI */}
         {showChatbot && (
           <div className="mt-10 bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col h-[80vh] overflow-hidden">
-            
+
             {/* Header with Back Button */}
             <div className="bg-blue-600 text-white p-4 rounded-t-xl shadow-md flex items-center justify-between">
               <h1 className="text-xl font-semibold">Calendar AI Assistant</h1>
@@ -133,11 +136,10 @@ function App() {
               )}
               {messages.map((message, index) => (
                 <div key={index} className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[70%] p-3 rounded-lg shadow-sm ${
-                    message.sender === 'user'
-                      ? 'bg-blue-500 text-white rounded-br-none'
-                      : 'bg-gray-200 text-gray-800 rounded-bl-none'
-                  }`}>
+                  <div className={`max-w-[70%] p-3 rounded-lg shadow-sm ${message.sender === 'user'
+                    ? 'bg-blue-500 text-white rounded-br-none'
+                    : 'bg-gray-200 text-gray-800 rounded-bl-none'
+                    }`}>
                     {message.text}
                   </div>
                 </div>
