@@ -1,26 +1,21 @@
-//main server to handle everything.(oauth2.0 and managing the calendar)
 
 const express = require('express');
 const { WebhookClient } = require('dialogflow-fulfillment');
 const { google } = require('googleapis');
 const dialogflow = require('@google-cloud/dialogflow');
 const cors = require('cors');
-const admin = require('firebase-admin'); // Import Firebase Admin SDK
-const fs = require('fs'); // Import Node.js File System module
+const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 
-
 app.use(cors({
-    origin: 'http://localhost:5173' // Allow requests from your React dev server
+    origin: 'http://localhost:5173'
 }));
-
-
 app.use(express.json());
 
-//GOOGLE oauth setup
-//getting the credentials from env
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
@@ -28,15 +23,12 @@ const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT_ID;
 const DIALOGFLOW_AGENT_ID = process.env.DIALOGFLOW_AGENT_ID;
 const FIREBASE_SERVICE_ACCOUNT_PATH = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
-// --- Firebase Admin SDK Initialization ---
-
 if (!FIREBASE_SERVICE_ACCOUNT_PATH) {
     console.error('ERROR: GOOGLE_APPLICATION_CREDENTIALS is not set in your .env file!');
     process.exit(1);
 }
 
-//checking for file(credentital) missing or not
-const absoluteServiceAccountPath = require('path').resolve(FIREBASE_SERVICE_ACCOUNT_PATH);
+const absoluteServiceAccountPath = path.resolve(FIREBASE_SERVICE_ACCOUNT_PATH);
 console.log(`Attempting to load service account key from: ${absoluteServiceAccountPath}`);
 
 if (!fs.existsSync(absoluteServiceAccountPath)) {
@@ -46,63 +38,66 @@ if (!fs.existsSync(absoluteServiceAccountPath)) {
 }
 
 try {
-    const serviceAccount = require(absoluteServiceAccountPath); // Use absolute path here
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
-    console.log('Firebase Admin SDK initialized successfully.');
+  const serviceAccount = require(absoluteServiceAccountPath);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('Firebase Admin SDK initialized successfully.');
 } catch (error) {
-    console.error('ERROR: Failed to initialize Firebase Admin SDK.');
-    console.error('Please check GOOGLE_APPLICATION_CREDENTIALS path in your .env file and ensure the JSON key file exists and is valid.');
-    console.error('Detailed error:', error.message);
-    process.exit(1);
+  console.error('ERROR: Failed to initialize Firebase Admin SDK.');
+  console.error('Please check GOOGLE_APPLICATION_CREDENTIALS path in your .env file and ensure the JSON key file exists and is valid.');
+  console.error('Detailed error:', error.message);
+  process.exit(1);
 }
 
-const db = admin.firestore(); // Initialize Firestore
+const db = admin.firestore();
 
-// Configure the OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
     CLIENT_ID,
     CLIENT_SECRET,
     REDIRECT_URI
 );
 
-//defining the permissions for google calendar;
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 
-// Dialogflow Session Client Setup
 const sessionClient = new dialogflow.SessionsClient();
 
-const FRONTEND_SESSION_ID = 'my-unique-frontend-chat-session-123';
-const sessionPath = sessionClient.projectAgentSessionPath(PROJECT_ID, FRONTEND_SESSION_ID);
-
-
-//route to start the google auth flow
 app.get('/auth/google', (req, res) => {
+    const sessionId = req.query.sessionId; // Get sessionId from frontend query parameter
+
+    if (!sessionId) {
+        console.error('ERROR: Session ID missing from /auth/google request. Cannot initiate OAuth.');
+        return res.status(400).send('Session ID is missing. Please ensure your frontend sends it.');
+    }
+
     const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: SCOPES,
         prompt: 'consent',
+        state: sessionId // Pass the dynamic sessionId through the state
     });
-    console.log('Redirecting user to Google for authentication:', authUrl);
+    console.log('Redirecting user to Google for authentication with state (sessionId):', sessionId);
     res.redirect(authUrl);
 });
 
-//Oauth callback route
-//redirecting user here after granting/removing permission
 app.get('/oauth2callback', async (req, res) => {
     const code = req.query.code;
+    const sessionId = req.query.state; // Retrieve the dynamic sessionId from the state parameter
 
     if (!code) {
         console.error('OAuth2 Callback: No authorization code received.');
         return res.status(400).send('Authorization failed: No code received.');
     }
+    if (!sessionId) {
+        console.error('OAuth2 Callback: Session ID missing from state parameter.');
+        return res.status(400).send('Authentication failed: Session ID missing.');
+    }
 
     try {
         const { tokens } = await oauth2Client.getToken(code);
-        // Store tokens in Firestore associated with the session ID
-        await db.collection('userTokens').doc(FRONTEND_SESSION_ID).set(tokens);
-        console.log('Successfully obtained and stored tokens in Firestore for session:', FRONTEND_SESSION_ID);
+        // Store tokens in Firestore using the dynamic sessionId
+        await db.collection('userTokens').doc(sessionId).set(tokens);
+        console.log('Successfully obtained and stored tokens in Firestore for session:', sessionId);
         res.status(200).send('Authentication successful! You can now close this tab and go back to the chatbot.');
 
     } catch (error) {
@@ -111,21 +106,20 @@ app.get('/oauth2callback', async (req, res) => {
     }
 });
 
-//function to get user to google calendar
-async function getAuthenticatedCalendarClient() {
-    //retrieving tokens from firestore for session id;
-    const docRef = db.collection('userTokens').doc(FRONTEND_SESSION_ID);
+ //function to get an authenticated Google Calendar client 
+async function getAuthenticatedCalendarClient(sessionId) { // Accept sessionId as argument
+    // Retrieve tokens from Firestore using the provided sessionId
+    const docRef = db.collection('userTokens').doc(sessionId);
     const doc = await docRef.get();
 
     if (!doc.exists) {
         throw new Error('User not authenticated. No tokens found for this session.');
     }
 
-    let tokens = doc.data(); //get stored tokens
+    let tokens = doc.data();
 
-    oauth2Client.setCredentials(tokens); //set credentials to oauth client
-    
-    //if token is expired, use refresh token to get a new
+    oauth2Client.setCredentials(tokens);
+
     if (oauth2Client.isTokenExpiring()) {
         console.log('Access token expiring, refreshing...');
         const { tokens: newTokens } = await oauth2Client.refreshAccessToken();
@@ -139,17 +133,26 @@ async function getAuthenticatedCalendarClient() {
 }
 
 
-//creating new endpoint for the client side chat(frontend) FE will interact with this.
+//Endpoint for Frontend Chat (/chat)
 app.post('/chat', async (req, res) => {
     const userMessage = req.body.message;
+    const sessionId = req.body.sessionId; // Extract sessionId from the request body
 
     if (!userMessage) {
         return res.status(400).json({ reply: 'No message provided.' });
     }
+    if (!sessionId) {
+        // This is a critical error: frontend didn't send sessionId
+        console.error('ERROR: Session ID missing from frontend /chat request.');
+        return res.status(400).json({ reply: 'Session ID is missing. Please refresh the page.' });
+    }
 
     try {
+        // Use the dynamic sessionId to construct the sessionPath for Dialogflow
+        const dynamicSessionPath = sessionClient.projectAgentSessionPath(PROJECT_ID, sessionId);
+
         const request = {
-            session: sessionPath,
+            session: dynamicSessionPath, // Use the dynamic session path
             queryInput: {
                 text: {
                     text: userMessage,
@@ -158,13 +161,12 @@ app.post('/chat', async (req, res) => {
             },
         };
 
-        //sending user's msg to dialogflow detection api using fulfillment
         const responses = await sessionClient.detectIntent(request);
         const result = responses[0].queryResult;
 
         let fulfillmentText = result.fulfillmentText;
 
-        console.log(`Frontend Chat - User: "${userMessage}"`);
+        console.log(`Frontend Chat - User: "${userMessage}" (Session ID: ${sessionId})`);
         console.log(`Dialogflow Detected Intent: "${result.intent ? result.intent.displayName : 'None'}"`);
         console.log(`Dialogflow Fulfillment Text: "${fulfillmentText}"`);
 
@@ -181,13 +183,20 @@ app.post('/chat', async (req, res) => {
 });
 
 
-// Defining the Dialogflow webhook endpoints for tasks
+// Dialogflow Webhook Endpoint (for Fulfillment)
 app.post('/webhook', (req, res) => {
     const agent = new WebhookClient({ request: req, response: res });
     console.log('Dialogflow Request Body (from Fulfillment):', JSON.stringify(req.body, null, 2));
 
+    
+    const dialogflowSessionIdMatch = req.body.session.match(/sessions\/(.*)$/);
+    const dialogflowSessionId = dialogflowSessionIdMatch ? dialogflowSessionIdMatch[1] : 'unknown-session';
+
+    console.log(`Fulfillment Webhook received for Session ID: ${dialogflowSessionId}`);
+
+
     function welcome(agent) {
-        agent.add(`Hello! I'm your Calendar AI Assistant. I can help you book, check or manage appointments. What would you like to do?`);
+        agent.add(`Hello! I'm your Calendar AI Assistant. What would you like to do?`);
         console.log('Welcome Intent handled.');
     }
 
@@ -196,7 +205,6 @@ app.post('/webhook', (req, res) => {
         console.log('Fallback Intent handled.');
     }
 
-    // book.appointment intent handler(intent in dialogflow)
     async function handleBookAppointment(agent) {
         const dateTimeParam = agent.parameters['date-time'];
         const personParam = agent.parameters.person;
@@ -214,7 +222,8 @@ app.post('/webhook', (req, res) => {
         console.log('Time (extracted for display):', time);
         console.log('Subject:', subject);
         console.log('Person:', personName);
-        console.log('-----------------------------------------'); //check these logs locally
+        console.log('Fulfillment Session ID:', dialogflowSessionId); // Log the session ID here
+        console.log('-----------------------------------------');
 
         if (!eventDateTimeISO) {
             agent.add("I need a specific date and time to book the appointment. Can you provide those?");
@@ -225,9 +234,10 @@ app.post('/webhook', (req, res) => {
             subject = `Meeting with ${personName}`;
         }
 
-        //google calendar api call
         try {
-            const calendar = await getAuthenticatedCalendarClient();
+            // Pass the Dialogflow session ID to getAuthenticatedCalendarClient
+            // This ensures the correct user's tokens are loaded from Firestore.
+            const calendar = await getAuthenticatedCalendarClient(dialogflowSessionId);
 
             const eventStartTime = eventDateTimeISO;
             const tempStartDate = new Date(eventDateTimeISO);
@@ -256,12 +266,12 @@ app.post('/webhook', (req, res) => {
                 },
             };
 
-            const response = await calendar.events.insert({ //main api call to create an event in calendar
+            const response = await calendar.events.insert({
                 calendarId: 'primary',
                 resource: event,
             });
 
-            const eventLink = response.data.htmlLink; //main api to create an event in calendar
+            const eventLink = response.data.htmlLink;
 
             let successMessage = `Okay, I've booked your appointment for ${date} at ${time}.`;
             successMessage += ` The topic is "${subject}".`;
@@ -279,9 +289,10 @@ app.post('/webhook', (req, res) => {
             let errorMessage = "I encountered an error while trying to book your appointment. Please try again later.";
 
             if (error.message.includes('User not authenticated')) {
-                errorMessage = `It looks like your Google Calendar isn't linked yet. Please visit this link to authorize me: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google\``;
+              
+                errorMessage = `It looks like your Google Calendar isn't linked yet. Please visit this link to authorize me: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${dialogflowSessionId}\``;
             } else if (error.code === 401 || error.code === 403) {
-                errorMessage = `I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google\``;
+                 errorMessage = `I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${dialogflowSessionId}\``;
             } else {
                 errorMessage += ` Error details: ${error.message}`;
             }
@@ -289,7 +300,6 @@ app.post('/webhook', (req, res) => {
         }
     }
 
-    // Map Dialogflow Intents to JavaScript Functions 
     let intentMap = new Map();
     intentMap.set('Default Welcome Intent', welcome);
     intentMap.set('Default Fallback Intent', fallback);
@@ -298,7 +308,6 @@ app.post('/webhook', (req, res) => {
     agent.handleRequest(intentMap);
 });
 
-//start the server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`AI assistant backend is running on PORT: ${PORT}`);
