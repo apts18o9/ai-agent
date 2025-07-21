@@ -15,7 +15,7 @@ function App() {
   //backend port 
   const BACKEND_BASE_URL = 'http://localhost:5000';
   //webhook url(ngrok)
-  const WEBHOOK_URL = '';
+  const WEBHOOK_URL = 'https://5b78e781c456.ngrok-free.app/chat';
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({behavior: 'smooth'});

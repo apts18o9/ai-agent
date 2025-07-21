@@ -19,18 +19,38 @@ function App() {
   const [input, setInput] = useState('');
   const [showChatbot, setShowChatbot] = useState(false);
 
+  //state to store unique session id for current user
+  const [sessionId, setSessionId] = useState(null);
+
   const messagesEndRef = useRef(null);
 
   const BACKEND_BASE_URL = 'http://localhost:5000';
-  const WEBHOOK_URL = '';
+  const WEBHOOK_URL = 'https://2f4e65c12579.ngrok-free.app/chat';
 
   useEffect(() => {
+    let storedSessionId = localStorage.getItem('chatbotSessionId');
+    if(!storedSessionId){
+      storedSessionId = crypto.randomUUID() //generate new UUID
+      localStorage.setItem('chatbotSessionId', storedSessionId);
+    }
+
+    setSessionId(storedSessionId)
+    console.log('Current Session Id', storedSessionId);
+    
+
     if (showChatbot) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, showChatbot]);
 
   const handleSendMessage = async () => {
+
+    if(!sessionId){
+      console.warn('Session ID not yet initialized, Wait..');
+      return;
+      
+    }
+
     if (input.trim()) {
       const userMessage = input.trim();
       setMessages((prevMessages) => [...prevMessages, { text: userMessage, sender: 'user' }]);
@@ -41,7 +61,7 @@ function App() {
         const response = await fetch(WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userMessage }),
+          body: JSON.stringify({ message: userMessage, sessionId: sessionId }),
         });
 
         if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
@@ -51,7 +71,7 @@ function App() {
         setMessages((prevMessages) => [...prevMessages, { text: botReply, sender: 'bot' }]);
 
         //checking if oauth is done or not based on bot reply
-        if (botReply.includes('Please visit this link to authorize me:')) {
+        if (data.needsAuth || botReply.includes('Please visit this link to authorize me:')) {
           const authLink = `${BACKEND_BASE_URL}/auth/google`;
           setMessages((prevMessages) => [
             ...prevMessages,
