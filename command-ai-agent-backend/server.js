@@ -38,16 +38,16 @@ if (!fs.existsSync(absoluteServiceAccountPath)) {
 }
 
 try {
-  const serviceAccount = require(absoluteServiceAccountPath);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-  console.log('Firebase Admin SDK initialized successfully.');
+    const serviceAccount = require(absoluteServiceAccountPath);
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('Firebase Admin SDK initialized successfully.');
 } catch (error) {
-  console.error('ERROR: Failed to initialize Firebase Admin SDK.');
-  console.error('Please check GOOGLE_APPLICATION_CREDENTIALS path in your .env file and ensure the JSON key file exists and is valid.');
-  console.error('Detailed error:', error.message);
-  process.exit(1);
+    console.error('ERROR: Failed to initialize Firebase Admin SDK.');
+    console.error('Please check GOOGLE_APPLICATION_CREDENTIALS path in your .env file and ensure the JSON key file exists and is valid.');
+    console.error('Detailed error:', error.message);
+    process.exit(1);
 }
 
 const db = admin.firestore();
@@ -106,7 +106,7 @@ app.get('/oauth2callback', async (req, res) => {
     }
 });
 
- //function to get an authenticated Google Calendar client 
+//function to get an authenticated Google Calendar client 
 async function getAuthenticatedCalendarClient(sessionId) { // Accept sessionId as argument
     // Retrieve tokens from Firestore using the provided sessionId
     const docRef = db.collection('userTokens').doc(sessionId);
@@ -188,7 +188,7 @@ app.post('/webhook', (req, res) => {
     const agent = new WebhookClient({ request: req, response: res });
     console.log('Dialogflow Request Body (from Fulfillment):', JSON.stringify(req.body, null, 2));
 
-    
+
     const dialogflowSessionIdMatch = req.body.session.match(/sessions\/(.*)$/);
     const dialogflowSessionId = dialogflowSessionIdMatch ? dialogflowSessionIdMatch[1] : 'unknown-session';
 
@@ -289,10 +289,10 @@ app.post('/webhook', (req, res) => {
             let errorMessage = "I encountered an error while trying to book your appointment. Please try again later.";
 
             if (error.message.includes('User not authenticated')) {
-              
+
                 errorMessage = `It looks like your Google Calendar isn't linked yet. Please visit this link to authorize me: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${dialogflowSessionId}\``;
             } else if (error.code === 401 || error.code === 403) {
-                 errorMessage = `I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${dialogflowSessionId}\``;
+                errorMessage = `I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${dialogflowSessionId}\``;
             } else {
                 errorMessage += ` Error details: ${error.message}`;
             }
@@ -300,10 +300,131 @@ app.post('/webhook', (req, res) => {
         }
     }
 
+
+
+    //function for check.appointment intent(to check tasks based on date time)
+
+    async function handleCheckAppointment(agent) {
+
+        const dateTimeParam = agent.parameters['date-time'];
+        const datePeriodParam = agent.parameters['date-period'];
+
+        const dialogflowSessionIdMatch = req.body.session.match(/sessions\/(.*)$/);
+        const sessionId = dialogflowSessionIdMatch ? dialogflowSessionIdMatch[1] : 'unknown-session'
+
+        //logs to check the date and time provided
+
+        console.log('--check appointment intent--');
+        console.log('DateTime Parameter: ', dateTimeParam);
+        console.log('DatePeriod Parameter: ', datePeriodParam);
+        console.log('SessionID: ', sessionId);
+
+
+        let timeMin, timeMax;
+        const now = new Date();
+        now.setHours(0, 0, 0, 0) //default to 0 
+
+
+        //finding date and time range based on parameters
+
+        if (dateTimeParam && dateTimeParam.date_time) {
+            //sepcific date time provided(12 July, today 4PM)
+            const dateObj = new Date(dateTimeParam.date_time);
+            timeMin = dateObj.toISOString();
+
+            //sepcific day only then set default time to 0
+            const endOfDay = new Date(dateObj)
+            endOfDay.setHours(23, 59, 59, 999);
+            timeMax = endOfDay.toISOString();
+            console.log(`Checking for events on: ${dateObj.toDateString()}`);
+        }
+        else if (datePeriodParam && datePeriodParam.startDate && datePeriodParam.endDate) {
+            //next-week
+
+            timeMin = new Date(datePeriodParam.startDate).toISOString();
+            const endDateObj = new Date(datePeriodParam.endDate);
+            endDateObj.setHours(23, 59, 59, 999);
+            timeMax = endDateObj.toISOString();
+            console.log(`Checking on events from ${new Date(datePeriodParam.startDate).toDateString} to ${endDateObj.toDateString()}`);
+
+        }
+        else {
+            //default to today 
+            timeMin = now.toISOString();
+            const endOfDay = new Date(now)
+            endOfDay.setHours(23, 59, 59, 999);
+            timeMax = endOfDay.toISOString()
+            console.log(`checking for events for today: ${now.toDateString()}`);
+
+        }
+
+
+        try {
+
+            const calendar = await getAuthenticatedCalendarClient(sessionId);
+
+            const response = await calendar.events.list({
+                calendarId: 'primary',
+                timeMin: timeMin,
+                timeMax: timeMax,
+                singleEvents: true,
+                orderBy: 'startTime',
+                showDeleted: false,
+                maxResults: 10
+            })
+            
+            const events = response.data.items;
+            let responseMessage = '';
+
+            if(events.length === 0){
+                responseMessage = `Couldn't find any appointments in your calendar for that time`;
+            }else{
+                responseMessage = `Here are your upcoming appointments: \n`;
+                events.forEach((event) => {
+                    const start = event.start.dateTime || event.start.date;
+                    const eventDate = new Date(start).toLocaleDateString('en-us', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+
+                    const eventTime = event.start.dateTime ? new Date(start).toLocaleDateString('en-us', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                    })
+                    : 'All day'
+
+                    responseMessage += `-${event.summary} on ${eventDate} at ${eventTime}. \n`
+                })
+            }
+
+            agent.add(responseMessage)
+            console.log('successfully retrived calendar events');
+            
+
+        } catch (error) {
+            console.error('Error checking appointments with Google Calendar.', error.message);
+            let errorMessage = "Encounterd an error while trying to check appointment"
+
+            if (error.message.includes('User not authenticated')) {
+                errorMessage = `It looks like your Google Calendar isn't linked yet. Please visit this link to authorize me: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${sessionId}\``;
+            } else if (error.code === 401 || error.code === 403) {
+                errorMessage = `I'm having trouble accessing your calendar. Please try re-authenticating by visiting this link: \`${app.get('host') || `http://localhost:${PORT}`}/auth/google?sessionId=${sessionId}\``;
+            } else {
+                errorMessage += ` Error details: ${error.message}`;
+            }
+            agent.add(errorMessage);
+
+        }
+
+    }
+
     let intentMap = new Map();
     intentMap.set('Default Welcome Intent', welcome);
     intentMap.set('Default Fallback Intent', fallback);
     intentMap.set('book.appointment', handleBookAppointment);
+    intentMap.set('check.appointment', handleCheckAppointment)
 
     agent.handleRequest(intentMap);
 });
